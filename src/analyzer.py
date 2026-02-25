@@ -102,9 +102,20 @@ class OuraAnalyzer:
             self.patterns["chronotype"] = chronotype
 
         if bed_times:
-            avg_bed_minutes = sum(
-                t.hour * 60 + t.minute for t in bed_times
-            ) / len(bed_times)
+            # Handle bedtimes that cross midnight (00:XX times treated as 24:XX)
+            bed_minutes_list = []
+            for t in bed_times:
+                minutes = t.hour * 60 + t.minute
+                # If bedtime is early morning (before 6 AM), treat as previous day (add 24 hours)
+                if t.hour < 6:
+                    minutes += 24 * 60
+                bed_minutes_list.append(minutes)
+
+            avg_bed_minutes = sum(bed_minutes_list) / len(bed_minutes_list)
+            # Handle wraparound: if over 24 hours, subtract 24 hours
+            if avg_bed_minutes >= 24 * 60:
+                avg_bed_minutes -= 24 * 60
+
             avg_bed_time = time(int(avg_bed_minutes // 60), int(avg_bed_minutes % 60))
             self.patterns["average_bedtime"] = avg_bed_time.isoformat()
 

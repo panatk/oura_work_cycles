@@ -132,18 +132,17 @@ def refresh_data():
         tz = pytz.timezone(TIMEZONE)
         today = datetime.now(tz)
 
-        # Try to get wake time from last night's sleep
+        # Use average wake time from patterns (more representative than last night's sleep)
         wake_time = None
-        sleep_periods = all_data.get("sleep_periods", [])
-        if sleep_periods:
-            last_sleep = sleep_periods[-1]
-            wake_time_str = last_sleep.get("bedtime_end")
-            if wake_time_str:
-                try:
-                    wake_dt = datetime.fromisoformat(wake_time_str.replace("Z", "+00:00"))
-                    wake_time = wake_dt.astimezone(tz)
-                except Exception as e:
-                    logger.debug(f"Could not parse wake time: {e}")
+        if current_patterns.get("average_wake_time"):
+            try:
+                avg_wake_str = current_patterns["average_wake_time"]
+                parts = avg_wake_str.split(":")
+                wake_hour = int(parts[0])
+                wake_min = int(parts[1])
+                wake_time = today.replace(hour=wake_hour, minute=wake_min, second=0, microsecond=0)
+            except Exception as e:
+                logger.debug(f"Could not parse average wake time: {e}")
 
         current_schedule = analyzer.generate_daily_schedule(
             readiness_score=today_readiness, wake_time=wake_time, today_date=today

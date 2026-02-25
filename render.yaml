@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: oura-smart-calendar
+    env: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: python -m src.server
+    envVars:
+      - key: OURA_TOKEN
+        scope: run
+        value: # Set in Render dashboard
+      - key: TIMEZONE
+        value: Australia/Sydney
+      - key: DEBUG
+        value: False
+      - key: PORT
+        value: 8000
+    healthCheckPath: /health
+    healthCheckInterval: 30

@@ -7,7 +7,7 @@ from typing import Optional, Dict, Any
 from urllib.parse import urlencode
 from pathlib import Path
 
-from flask import Flask, Response, jsonify, redirect, request
+from flask import Flask, Response, jsonify, redirect, request, send_file
 import pytz
 
 from config import (
@@ -283,6 +283,18 @@ def callback():
         return jsonify({"error": "Failed to obtain access token"}), 400
 
 
+@app.route("/dashboard", methods=["GET"])
+def dashboard():
+    """Serve the interactive dashboard."""
+    dashboard_file = Path(__file__).parent / "dashboard.html"
+    if dashboard_file.exists():
+        with open(dashboard_file, 'r') as f:
+            html_content = f.read()
+        return Response(html_content, mimetype="text/html")
+    else:
+        return jsonify({"error": "Dashboard not found"}), 404
+
+
 @app.route("/", methods=["GET"])
 def index():
     """Root endpoint with API documentation."""
@@ -290,8 +302,8 @@ def index():
 
     if using_mock_data:
         setup_steps = {
-            "step1": "Visit /analyze to generate schedule from mock data",
-            "step2": "Visit /status to see your schedule",
+            "step1": "Visit /dashboard to view your dashboard",
+            "step2": "Visit /status to see raw schedule data",
             "step3": "Visit /calendar.ics to get the ICS feed for Google Calendar",
         }
     else:
@@ -306,11 +318,12 @@ def index():
             "service": "Oura Smart Calendar",
             "mode": mode_info,
             "endpoints": {
+                "GET /dashboard": "📊 Interactive visual dashboard",
                 "GET /authorize": "Start OAuth2 authorization with Oura (if using API)",
                 "GET /callback": "OAuth2 callback endpoint (handled automatically)",
                 "GET /calendar.ics": "Subscribe to this ICS feed in Google Calendar",
                 "GET /health": "Health check",
-                "GET /status": "Current status and today's schedule",
+                "GET /status": "Current status and today's schedule (JSON)",
                 "GET /analyze": "Force refresh of Oura data and schedule",
             },
             "setup": setup_steps,

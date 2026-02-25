@@ -29,14 +29,21 @@ with open(csv_file, 'r') as f:
                 "score": score
             })
 
-            # Generate approximate sleep periods (assuming 11 PM bedtime, 7 AM wake)
-            # This is estimated since we don't have exact times
-            bed_time = datetime.fromisoformat(date_str) - timedelta(hours=1)
-            wake_time = datetime.fromisoformat(date_str) + timedelta(hours=7)
+            # Generate realistic sleep periods in UTC
+            # Assuming: bedtime at 11 PM Sydney time, wake at 7 AM Sydney time next day
+            # Sydney UTC+11: 11 PM Sydney = 12 PM UTC (previous day), 7 AM Sydney = 8 PM UTC (previous day)
+            date_obj = datetime.fromisoformat(date_str)
+
+            # For readiness on date X, assume sleep from 11 PM on night of X to 7 AM on X+1
+            # bedtime_start: 11 PM on date X in Sydney = 12 PM UTC on date X
+            bed_time_utc = date_obj.replace(hour=12, minute=0, second=0)  # UTC time (11 PM Sydney = 12 PM UTC)
+
+            # bedtime_end: 7 AM on date X+1 in Sydney = 8 PM UTC on date X
+            wake_time_utc = (date_obj + timedelta(days=1)).replace(hour=20, minute=0, second=0)  # UTC time (7 AM Sydney next day = 8 PM UTC same day)
 
             sleep_data.append({
-                "bedtime_start": bed_time.isoformat() + "Z",
-                "bedtime_end": wake_time.isoformat() + "Z"
+                "bedtime_start": bed_time_utc.isoformat() + "Z",
+                "bedtime_end": wake_time_utc.isoformat() + "Z"
             })
         except (ValueError, KeyError):
             continue

@@ -101,7 +101,8 @@ class OuraClient:
             }
 
             logger.info(f"Exchanging auth code for token at {token_url}")
-            response = requests.post(token_url, json=payload, timeout=10)
+            # Use form data (application/x-www-form-urlencoded) instead of JSON
+            response = requests.post(token_url, data=payload, timeout=10)
 
             try:
                 data = response.json()

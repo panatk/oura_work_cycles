@@ -181,8 +181,10 @@ class OuraAnalyzer:
         if wake_time is None:
             if self.patterns.get("average_wake_time"):
                 avg_wake_str = self.patterns["average_wake_time"]
-                wake_hour, wake_min = map(int, avg_wake_str.split(":"))
-                wake_time = today_date.replace(hour=wake_hour, minute=wake_min)
+                parts = avg_wake_str.split(":")
+                wake_hour = int(parts[0])
+                wake_min = int(parts[1])
+                wake_time = today_date.replace(hour=wake_hour, minute=wake_min, second=0, microsecond=0)
             else:
                 # Default to 6 AM if no pattern data
                 wake_time = today_date.replace(hour=6, minute=0, second=0, microsecond=0)

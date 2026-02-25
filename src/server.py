@@ -3,8 +3,9 @@
 import logging
 import json
 from datetime import datetime
-from typing import Optional
+from typing import Optional, Dict, Any
 from urllib.parse import urlencode
+from pathlib import Path
 
 from flask import Flask, Response, jsonify, redirect, request
 import pytz
@@ -39,28 +40,47 @@ analyzer: Optional[OuraAnalyzer] = None
 calendar_gen: Optional[CalendarGenerator] = None
 current_schedule = None
 current_patterns = None
+mock_data: Optional[Dict[str, Any]] = None
+using_mock_data = False
 
 
 def initialize():
     """Initialize API clients and analyzers."""
-    global oura_client, analyzer, calendar_gen
+    global oura_client, analyzer, calendar_gen, mock_data, using_mock_data
 
     try:
-        # Check if we have auth credentials
-        if not OURA_TOKEN and not OURA_CLIENT_ID:
-            raise ValueError(
-                "No Oura credentials found. Set OURA_TOKEN or OURA_CLIENT_ID/SECRET env vars."
-            )
+        # Check for mock data first
+        mock_data_file = Path("mock_oura_data.json")
+        if mock_data_file.exists():
+            try:
+                with open(mock_data_file, 'r') as f:
+                    mock_data = json.load(f)
+                    logger.info(f"✅ Loaded mock data from {mock_data_file}")
+                    logger.info(f"   - {len(mock_data.get('readiness', []))} readiness records")
+                    logger.info(f"   - {len(mock_data.get('sleep_periods', []))} sleep periods")
+                    using_mock_data = True
+                    oura_client = None
+            except Exception as e:
+                logger.error(f"Failed to load mock data: {e}")
+                return False
+        else:
+            # Check if we have auth credentials for real API
+            if not OURA_TOKEN and not OURA_CLIENT_ID:
+                raise ValueError(
+                    "No Oura credentials found and no mock data available. "
+                    "Set OURA_TOKEN or OURA_CLIENT_ID/SECRET env vars, or place mock_oura_data.json in the app directory."
+                )
 
-        # Try to initialize Oura client
-        # If no direct token, it will check for cached token or return None
-        try:
-            oura_client = OuraClient(access_token=OURA_TOKEN)
-            logger.info("Successfully initialized Oura client")
-        except ValueError as e:
-            logger.warning(f"Oura client initialization: {e}")
-            logger.info("User must authorize via /authorize endpoint")
-            oura_client = None
+            # Try to initialize Oura client
+            # If no direct token, it will check for cached token or return None
+            try:
+                oura_client = OuraClient(access_token=OURA_TOKEN)
+                logger.info("Successfully initialized Oura client")
+                using_mock_data = False
+            except ValueError as e:
+                logger.warning(f"Oura client initialization: {e}")
+                logger.info("User must authorize via /authorize endpoint")
+                oura_client = None
 
         analyzer = OuraAnalyzer()
         calendar_gen = CalendarGenerator()
@@ -77,14 +97,21 @@ def refresh_data():
     global current_schedule, current_patterns
 
     try:
-        if not oura_client or not analyzer:
-            logger.warning("Clients not initialized")
+        if not analyzer:
+            logger.warning("Analyzer not initialized")
             return False
 
         logger.info("Refreshing Oura data...")
 
-        # Fetch all data
-        all_data = oura_client.get_all_data()
+        # Fetch all data (use mock data if available, otherwise call API)
+        if using_mock_data and mock_data:
+            logger.info("Using mock data for analysis")
+            all_data = mock_data
+        elif oura_client:
+            all_data = oura_client.get_all_data()
+        else:
+            logger.error("No data source available (no mock data and no API client)")
+            return False
 
         # Analyze patterns
         current_patterns = analyzer.analyze_historical_data(all_data)
@@ -157,6 +184,7 @@ def status():
     return jsonify(
         {
             "timestamp": datetime.now(tz).isoformat(),
+            "data_source": "mock" if using_mock_data else "oura_api",
             "patterns": current_patterns,
             "schedule": schedule_info,
         }
@@ -258,22 +286,34 @@ def callback():
 @app.route("/", methods=["GET"])
 def index():
     """Root endpoint with API documentation."""
+    mode_info = "🔄 Using mock data (local testing)" if using_mock_data else "🔐 Using Oura API (OAuth2)"
+
+    if using_mock_data:
+        setup_steps = {
+            "step1": "Visit /analyze to generate schedule from mock data",
+            "step2": "Visit /status to see your schedule",
+            "step3": "Visit /calendar.ics to get the ICS feed for Google Calendar",
+        }
+    else:
+        setup_steps = {
+            "step1": "Visit /authorize to authorize with Oura",
+            "step2": "Subscribe to /calendar.ics in Google Calendar",
+            "step3": "Enjoy your personalized schedule!",
+        }
+
     return jsonify(
         {
             "service": "Oura Smart Calendar",
+            "mode": mode_info,
             "endpoints": {
-                "GET /authorize": "Start OAuth2 authorization with Oura",
+                "GET /authorize": "Start OAuth2 authorization with Oura (if using API)",
                 "GET /callback": "OAuth2 callback endpoint (handled automatically)",
                 "GET /calendar.ics": "Subscribe to this ICS feed in Google Calendar",
                 "GET /health": "Health check",
                 "GET /status": "Current status and today's schedule",
                 "GET /analyze": "Force refresh of Oura data and schedule",
             },
-            "setup": {
-                "step1": "Visit /authorize to authorize with Oura",
-                "step2": "Subscribe to /calendar.ics in Google Calendar",
-                "step3": "Enjoy your personalized schedule!",
-            },
+            "setup": setup_steps,
         }
     )
 

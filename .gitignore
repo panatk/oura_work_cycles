@@ -66,6 +66,7 @@ logs/
 # Data cache (but .env should cover this)
 cache.json
 data/cache/
+oura_token_cache.json
 
 # OS
 .DS_Store

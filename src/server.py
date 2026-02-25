@@ -4,11 +4,21 @@ import logging
 import json
 from datetime import datetime
 from typing import Optional
+from urllib.parse import urlencode
 
-from flask import Flask, Response, jsonify
+from flask import Flask, Response, jsonify, redirect, request
 import pytz
 
-from config import DEBUG, PORT, TIMEZONE, OURA_TOKEN, OURA_CLIENT_ID
+from config import (
+    DEBUG,
+    PORT,
+    TIMEZONE,
+    OURA_TOKEN,
+    OURA_CLIENT_ID,
+    OURA_CLIENT_SECRET,
+    OURA_REDIRECT_URI,
+    OURA_API_BASE,
+)
 from src.oura_client import OuraClient
 from src.analyzer import OuraAnalyzer
 from src.calendar_gen import CalendarGenerator
@@ -42,11 +52,20 @@ def initialize():
                 "No Oura credentials found. Set OURA_TOKEN or OURA_CLIENT_ID/SECRET env vars."
             )
 
-        oura_client = OuraClient(access_token=OURA_TOKEN)
+        # Try to initialize Oura client
+        # If no direct token, it will check for cached token or return None
+        try:
+            oura_client = OuraClient(access_token=OURA_TOKEN)
+            logger.info("Successfully initialized Oura client")
+        except ValueError as e:
+            logger.warning(f"Oura client initialization: {e}")
+            logger.info("User must authorize via /authorize endpoint")
+            oura_client = None
+
         analyzer = OuraAnalyzer()
         calendar_gen = CalendarGenerator()
 
-        logger.info("Successfully initialized Oura client and analyzer")
+        logger.info("Successfully initialized analyzer and calendar generator")
         return True
     except Exception as e:
         logger.error(f"Failed to initialize: {e}")
@@ -186,6 +205,56 @@ def analyze():
         )
 
 
+@app.route("/authorize", methods=["GET"])
+def authorize():
+    """Redirect user to Oura for OAuth2 authorization."""
+    if not OURA_CLIENT_ID:
+        return jsonify({"error": "OURA_CLIENT_ID not configured"}), 400
+
+    params = {
+        "client_id": OURA_CLIENT_ID,
+        "redirect_uri": OURA_REDIRECT_URI,
+        "response_type": "code",
+        "scope": "email heartrate session stress personal heart_health tag spo2 daily workout ring_configuration",
+    }
+
+    auth_url = f"{OURA_API_BASE}/oauth/authorize?{urlencode(params)}"
+    logger.info(f"Redirecting to Oura authorization: {auth_url}")
+    return redirect(auth_url)
+
+
+@app.route("/callback", methods=["GET"])
+def callback():
+    """Handle OAuth2 callback from Oura."""
+    code = request.args.get("code")
+    error = request.args.get("error")
+
+    if error:
+        logger.error(f"OAuth error: {error}")
+        return jsonify({"error": f"Authorization failed: {error}"}), 400
+
+    if not code:
+        return jsonify({"error": "No authorization code received"}), 400
+
+    logger.info("Received authorization code from Oura. Exchanging for token...")
+
+    # Exchange code for token
+    token = OuraClient.exchange_auth_code(code)
+
+    if token:
+        logger.info("✅ Successfully obtained access token!")
+        refresh_data()  # Refresh data with new token
+        return jsonify(
+            {
+                "status": "success",
+                "message": "Authorization successful! You can now subscribe to /calendar.ics in Google Calendar.",
+            }
+        )
+    else:
+        logger.error("Failed to exchange authorization code for token")
+        return jsonify({"error": "Failed to obtain access token"}), 400
+
+
 @app.route("/", methods=["GET"])
 def index():
     """Root endpoint with API documentation."""
@@ -193,15 +262,17 @@ def index():
         {
             "service": "Oura Smart Calendar",
             "endpoints": {
+                "GET /authorize": "Start OAuth2 authorization with Oura",
+                "GET /callback": "OAuth2 callback endpoint (handled automatically)",
                 "GET /calendar.ics": "Subscribe to this ICS feed in Google Calendar",
                 "GET /health": "Health check",
                 "GET /status": "Current status and today's schedule",
                 "GET /analyze": "Force refresh of Oura data and schedule",
             },
             "setup": {
-                "step1": "Get Oura Personal Access Token from https://cloud.ouraring.com",
-                "step2": "Set OURA_TOKEN env var",
-                "step3": "Subscribe to /calendar.ics in Google Calendar",
+                "step1": "Visit /authorize to authorize with Oura",
+                "step2": "Subscribe to /calendar.ics in Google Calendar",
+                "step3": "Enjoy your personalized schedule!",
             },
         }
     )

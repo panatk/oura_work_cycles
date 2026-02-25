@@ -1,6 +1,6 @@
 Flask==3.0.0
 python-dotenv==1.0.0
 requests==2.31.0
-icalendar==5.1.0
+icalendar==5.0.14
 pytz==2024.1
 python-dateutil==2.8.2

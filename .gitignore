@@ -11,6 +11,7 @@ secrets.json
 .claude/
 .claude/**/*
 memory/
+CLAUDE_CODE_PROMPT.md
 
 # Python
 __pycache__/
